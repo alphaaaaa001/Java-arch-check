@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>架构体检报告</title>
+<!--
+  架构体检报告 · 单文件产物（零依赖，双击即可打开）
+  注意：下方示例数据为虚构项目 Acme Blog，仅演示格式；换成自己的项目时整段替换 DATA 即可。
+
+  给 AI 读：本文件内 `const DATA = {...}` 就是全部真相。
+    DATA.issues        每条检查结论（id / level / 现象 / 影响 / 证据 / 整改 / 判据）
+    DATA.modes.simple  读者视角（节点 / 连线 / 分步旁白）
+    DATA.modes.pro     运行时视角（五层）
+    DATA.meta          项目与检查范围
+  问题 id 是稳定索引（A1 / C2 / D0），用户说"讲讲 A1"时按 id 定位。
+-->
+<style>
+:root{
+  --bg:#070A0E; --panel:#0B1017; --panel-2:#0E141C;
+  --line:#18212C; --line-2:#22303F;
+  --ink:#EAEFF5; --ink-2:#94A3B3; --ink-3:#7C8A9A;
+  --teal:#5EEAD4; --rose:#FB7185; --amber:#FCD34D; --wire:#2E4052;
+  --mono:"IBM Plex Mono",ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+  --sans:"Inter","HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--ink);font-family:var(--sans);
+  overflow:hidden;-webkit-font-smoothing:antialiased;
+  display:flex;flex-direction:column;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(rgba(148,163,179,.026) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(148,163,179,.026) 1px,transparent 1px);
+  background-size:48px 48px;
+}
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse 66% 36% at 50% -8%,rgba(94,234,212,.05),transparent 70%);
+}
+
+/* 顶栏 */
+.topbar{position:relative;z-index:3;flex:none;display:flex;align-items:center;gap:24px;padding:15px 26px 12px;border-bottom:1px solid var(--line)}
+.brand{display:flex;flex-direction:column;gap:4px}
+.brand .k{font-family:var(--mono);font-size:9px;letter-spacing:.24em;color:var(--teal)}
+.brand .t{font-size:19px;font-weight:600;letter-spacing:-.022em;line-height:1.1}
+.brand .t small{font-weight:400;color:var(--ink-3);font-size:10.5px;margin-left:9px;font-family:var(--mono)}
+.spacer{flex:1}
+.legend{display:flex;gap:13px;align-items:center}
+.legend span{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;color:var(--ink-3);letter-spacing:.08em}
+.legend i{width:6px;height:6px;display:block}
+.lg-ok{background:var(--teal);opacity:.45}
+.lg-warn{background:var(--amber)}
+.lg-bad{background:var(--rose)}
+.seg{display:flex;border:1px solid var(--line-2)}
+.seg button{padding:7px 14px;background:transparent;border:0;cursor:pointer;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-3);transition:color .18s,background .18s}
+.seg button+button{border-left:1px solid var(--line-2)}
+.seg button.on{background:rgba(94,234,212,.1);color:var(--teal)}
+.seg button:hover:not(.on){color:var(--ink-2)}
+
+/* 舞台 */
+.stage{position:relative;z-index:2;flex:1;display:flex;overflow:hidden}
+.canvas-wrap{position:relative;flex:1;overflow:hidden;cursor:grab;touch-action:none}
+.canvas-wrap.grabbing{cursor:grabbing}
+.sizer{position:absolute;left:0;top:0;width:1200px;height:660px;transform-origin:0 0;will-change:transform}
+#canvas{position:absolute;left:0;top:0;width:1200px;height:660px}
+.hint{position:absolute;right:16px;bottom:11px;z-index:2;font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--ink-3);opacity:.7;pointer-events:none;transition:opacity .2s;background:rgba(7,10,14,.7);padding:3px 7px;border:1px solid var(--line)}
+.canvas-wrap:hover .hint{opacity:.85}
+
+.layer{position:absolute;left:24px;width:1152px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(14,20,28,.55),rgba(11,16,23,.18))}
+.layer.hot{border-color:rgba(94,234,212,.2)}
+.layer .lb{position:absolute;left:-1px;top:-1px;padding:3px 9px;font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:var(--ink-3);background:var(--bg);border:1px solid var(--line);border-top:0;border-left:0}
+.layer.hot .lb{color:rgba(94,234,212,.85);border-color:rgba(94,234,212,.2)}
+
+/* 节点 */
+.node{position:absolute;display:flex;flex-direction:column;justify-content:center;gap:3px;padding:10px 14px;border:1px solid var(--line-2);background:var(--panel-2);cursor:pointer;transition:border-color .2s,background .2s,opacity .3s,box-shadow .25s}
+.node::before{content:"";position:absolute;left:0;top:-1px;bottom:-1px;width:2px;background:var(--ink-3);transition:background .2s}
+.node:hover{border-color:var(--ink-3);background:#111821}
+.node .nt{font-size:14px;font-weight:600;letter-spacing:-.012em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node .ns{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-start::before{background:var(--teal)}
+.t-edge::before{background:rgba(94,234,212,.55)}
+.t-ai::before{background:#7DD3FC}
+.t-data::before{background:var(--ink-3)}
+.t-app::before{background:rgba(148,163,179,.7)}
+.node.bad{border-color:rgba(251,113,133,.38)}
+.node.bad::before{background:var(--rose)}
+.node.warn{border-color:rgba(252,211,77,.28)}
+.node.warn::before{background:var(--amber)}
+.node.dim{opacity:.16;pointer-events:none}
+.node.lit{box-shadow:0 0 0 1px rgba(94,234,212,.5),0 0 26px -6px rgba(94,234,212,.4)}
+.node.lit.bad{box-shadow:0 0 0 1px rgba(251,113,133,.55),0 0 26px -6px rgba(251,113,133,.35)}
+
+.flag{position:absolute;right:-9px;top:-9px;min-width:24px;height:16px;padding:0 6px;white-space:nowrap;letter-spacing:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;font-weight:600;font-style:normal;letter-spacing:.03em;border-radius:1px;color:#070A0E}
+.flag.bad{background:var(--rose)}
+.flag.warn{background:var(--amber)}
+.dot{position:absolute;right:-4px;top:-4px;width:5px;height:5px;border-radius:50%;background:var(--teal);opacity:.4}
+
+/* 连线与光点 */
+#edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.edge{fill:none;stroke:var(--wire);stroke-width:1.1;transition:stroke .3s,opacity .3s}
+.edge.bad{stroke:rgba(251,113,133,.2)}
+.edge.dim{opacity:.1}
+.edge.lit{stroke:rgba(94,234,212,.55);stroke-width:1.4}
+
+#sparks{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.spark{position:absolute;left:0;top:0;width:5px;height:5px;border-radius:50%;background:var(--teal);box-shadow:0 0 6px var(--teal),0 0 14px rgba(94,234,212,.4);offset-distance:0%;opacity:0;animation:flow 2.6s linear infinite;transition:opacity .3s}
+.spark.sky{background:#7DD3FC;box-shadow:0 0 6px #7DD3FC,0 0 14px rgba(125,211,252,.4)}
+.spark.dim{opacity:0 !important}
+
+/* 详情面板 */
+.panel{position:relative;z-index:4;flex:none;width:0;overflow:hidden;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+.panel.open{width:430px}
+.panel-in{width:380px;display:flex;flex-direction:column;height:100%;overflow-y:auto;transform-origin:0 0}
+.p-resizer{position:absolute;left:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:6;background:transparent}
+.p-resizer::after{content:"";position:absolute;left:2px;top:50%;transform:translateY(-50%);width:2px;height:34px;background:var(--line-2);border-radius:1px;transition:background .18s,height .18s}
+.p-resizer:hover::after{background:var(--teal);height:56px}
+.panel.resizing .p-resizer::after{background:var(--teal);height:56px}
+.panel-in::-webkit-scrollbar{width:6px}
+.panel-in::-webkit-scrollbar-thumb{background:var(--line-2)}
+.p-head{position:sticky;top:0;z-index:2;flex:none;display:flex;align-items:flex-start;gap:12px;padding:16px 18px 13px;background:var(--panel);border-bottom:1px solid var(--line)}
+.p-kind{font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:var(--ink-3);margin-bottom:5px}
+.p-title{font-size:16px;font-weight:600;letter-spacing:-.015em;line-height:1.3}
+.p-sub{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:4px}
+.p-close{margin-left:auto;flex:none;width:26px;height:26px;background:transparent;border:1px solid var(--line-2);cursor:pointer;color:var(--ink-3);font-family:var(--mono);font-size:13px;line-height:1;transition:color .18s,border-color .18s}
+.p-close:hover{color:var(--ink);border-color:var(--ink-3)}
+.p-body{padding:16px 18px 40px;display:flex;flex-direction:column;gap:16px}
+.p-role{font-size:12.5px;line-height:1.75;color:var(--ink-2)}
+.p-role b{color:var(--ink);font-weight:600}
+
+.issue{border:1px solid var(--line);background:var(--panel-2)}
+.issue+.issue{margin-top:9px}
+.i-head{display:flex;align-items:center;gap:9px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.i-id{font-family:var(--mono);font-size:9.5px;font-weight:600;padding:2px 5px;border-radius:1px;color:#070A0E}
+.i-id.bad{background:var(--rose)}
+.i-id.warn{background:var(--amber)}
+.i-id.ok{background:rgba(94,234,212,.75)}
+.i-title{font-size:12.5px;font-weight:600;line-height:1.4}
+.i-body{padding:11px 12px;display:flex;flex-direction:column;gap:10px}
+.f{display:flex;gap:10px;font-size:11.5px;line-height:1.65}
+.f-k{flex:none;width:32px;color:var(--ink-3);font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;padding-top:2px}
+.f-v{flex:1;color:var(--ink-2)}
+.f-v code{font-family:var(--mono);font-size:10.5px;color:var(--teal);background:rgba(94,234,212,.07);padding:1px 4px;overflow-wrap:anywhere;word-break:normal}
+.fix{border-left:2px solid var(--line-2);padding:1px 0 1px 9px;display:flex;flex-direction:column;gap:3px}
+.fix+.fix{margin-top:7px}
+.fix-t{font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.cost{font-family:var(--mono);font-size:8.5px;padding:1px 4px;border-radius:1px;font-weight:400}
+.cost.low{background:rgba(94,234,212,.13);color:var(--teal)}
+.cost.mid{background:rgba(252,211,77,.13);color:var(--amber)}
+.fix-d{font-size:11px;line-height:1.6;color:var(--ink-3)}
+.verify{border:1px dashed var(--line-2);padding:9px 11px;font-size:11px;line-height:1.65;color:var(--ink-2)}
+.verify b{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--ink-3);margin-bottom:4px;font-weight:400}
+
+/* 播放条 */
+.playbar{position:relative;z-index:3;flex:none;height:84px;border-top:1px solid var(--line);display:flex;flex-direction:column;justify-content:center;gap:6px;padding:0 26px;background:linear-gradient(180deg,rgba(7,10,14,.35),rgba(7,10,14,.92))}
+.pb-row{display:flex;align-items:center;gap:12px}
+.pb-btn{display:inline-flex;align-items:center;gap:7px;flex:none;height:28px;padding:0 12px;background:transparent;border:1px solid var(--line-2);cursor:pointer;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-2);transition:color .18s,border-color .18s,background .18s}
+.pb-btn:hover:not(:disabled){color:var(--teal);border-color:rgba(94,234,212,.45)}
+.pb-btn.primary{background:rgba(94,234,212,.1);border-color:rgba(94,234,212,.4);color:var(--teal)}
+.pb-btn:disabled{opacity:.3;cursor:default}
+.pb-btn[hidden]{display:none !important}
+.pb-tri{width:0;height:0;border-left:6px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent}
+.pb-sq{width:7px;height:7px;background:currentColor}
+.pb-track{flex:1;height:2px;background:var(--line-2);position:relative;overflow:hidden}
+.pb-fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--teal);transition:width .3s cubic-bezier(.22,.61,.36,1)}
+.pb-count{font-family:var(--mono);font-size:10px;color:var(--ink-3);letter-spacing:.1em;flex:none;min-width:52px;text-align:right}
+.narr{font-size:12.5px;line-height:1.6;color:var(--ink-3);display:flex;gap:10px;align-items:baseline;min-height:20px;transition:color .2s}
+.narr b{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--teal);font-weight:400;flex:none}
+.narr.on{color:var(--ink)}
+
+@keyframes flow{0%{offset-distance:0%;opacity:0}9%{opacity:1}87%{opacity:1}100%{offset-distance:100%;opacity:0}}
+@media (max-width:1100px){.legend{display:none}.panel.open{width:376px}.panel-in{width:380px}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="k" id="mKicker">READER VIEW</span>
+    <span class="t" id="mTitle">从一次点击开始 <small id="mSub">Acme Blog</small></span>
+  </div>
+  <div class="spacer"></div>
+  <div class="legend">
+    <span><i class="lg-ok"></i>通过</span>
+    <span><i class="lg-warn"></i>有理由的偏离</span>
+    <span><i class="lg-bad"></i>有问题</span>
+  </div>
+  <div class="seg">
+    <button data-mode="simple" class="on">简单版</button>
+    <button data-mode="pro">专业版</button>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="canvas-wrap" id="canvasWrap">
+    <span class="hint">滚轮缩放 · 拖动平移 · Esc 退出</span>
+    <div class="sizer" id="sizer">
+      <div id="canvas">
+        <div id="layers"></div>
+        <svg id="edges" viewBox="0 0 1200 660" preserveAspectRatio="none"></svg>
+        <div id="nodes"></div>
+        <div id="sparks"></div>
+      </div>
+    </div>
+  </div>
+  <aside class="panel" id="panel"><div class="p-resizer" id="pResizer" title="拖动调整宽度 · 双击复位"></div><div class="panel-in" id="panelIn"></div></aside>
+</div>
+
+<div class="playbar">
+  <div class="pb-row">
+    <button class="pb-btn primary" id="btnPlay"><span class="pb-tri"></span>播放讲解</button>
+    <button class="pb-btn" id="btnPrev" disabled>←</button>
+    <button class="pb-btn" id="btnNext" disabled>→</button>
+    <button class="pb-btn" id="btnExit" hidden>退出播放</button>
+    <div class="pb-track"><div class="pb-fill" id="pbFill"></div></div>
+    <span class="pb-count" id="pbCount">00 / 00</span>
+    <button class="pb-btn" id="btnFit">全览</button>
+  </div>
+  <p class="narr" id="narr"><b id="narrNo">PREVIEW</b><span id="narrTxt">点节点看它做什么、哪里有问题；点「播放讲解」跟着走一遍。</span></p>
+</div>
+
+<script>
+"use strict";
+
+const CANVAS_W = 1200, CANVAS_H = 660;
+
+/* ═══════════════════════════════════════════════════
+   数据区 · 一份数据，两个读者
+   人看 HTML；AI 读这个对象。问题 id（A1 / C2 / D0）是共同索引。
+   ═══════════════════════════════════════════════════ */
+const DATA = {
+  meta: {
+    project: "Acme Blog",
+    stack: "Spring Boot 3.5 · Java 21 · MySQL · Redis",
+    checkedAt: "2026-10-21",
+    scope: "20 项检查表 · 6 域"
+  },
+
+  issues: {
+    A1: {
+      level: "bad", title: "非流式对话占用请求线程",
+      symptom: "一次 /chat 调用在 Tomcat 线程上同步等 3–8 秒，期间该线程什么都做不了。",
+      impact: "默认 200 线程。20 个人同时问，20 个线程被钉住；到 200 并发，首页也打不开。",
+      evidence: "ChatController.java:56 aiChatService.chat() 同步调用；同文件 :65 的 /chat/stream 返回 Flux，不占线程。",
+      fixes: [
+        { t: "前端只走 /chat/stream", d: "流式端点已存在且不阻塞；非流式留给脚本与降级。", cost: "low", costTx: "低" },
+        { t: "开虚拟线程", d: "spring.threads.virtual.enabled=true，一行配置；阻塞时让出载体线程。", cost: "low", costTx: "低" },
+        { t: "给 /chat 加并发闸门", d: "信号量限流，超限直接返回“稻草人忙”，不让它拖垮全站。", cost: "mid", costTx: "中" }
+      ],
+      verify: "200 并发下第 201 个请求首字节 < 300ms；tomcat.threads.busy 不随对话数线性上升。"
+    },
+    A2: {
+      level: "ok", title: "流式返回不占请求线程",
+      symptom: "chatStream 返回 Flux<String>，Spring MVC 走异步适配输出 SSE。",
+      impact: "这条做对了：等模型的时间不会占用 Tomcat 线程。",
+      evidence: "ChatController.java:65 返回 Flux；容器异步写出。",
+      fixes: [{ t: "保持现状", d: "新增 AI 端点沿用 Flux / SseEmitter，不要退回同步。", cost: "low", costTx: "低" }],
+      verify: "50 条并发 SSE 压测，平台线程数保持在核数附近。"
+    },
+    A3: {
+      level: "ok", title: "锁内没有阻塞调用",
+      symptom: "全仓 synchronized 共 6 处，锁内均为内存 Map 操作。",
+      impact: "不会 pin 载体线程，开虚拟线程没有退化风险。",
+      evidence: "GuestQuotaService.java:33,42；InMemoryChatMemory.java:60,77,94,101。",
+      fixes: [{ t: "可选：换无锁原子操作", d: "ConcurrentHashMap.compute / merge 本身原子，可去掉全局串行锁。", cost: "low", costTx: "低" }],
+      verify: "JFR 事件 jdk.VirtualThreadPinned 计数为 0。"
+    },
+    A4: {
+      level: "bad", title: "异步任务没有分池",
+      symptom: "@EnableAsync 已开，但没有自定义 Executor，邮件与 AI 共用同一个池。",
+      impact: "一次模型超时会挤占邮件线程；两类任务失败模式不同，却共享队列与拒绝策略。",
+      evidence: "config/AsyncConfig.java:9-12 只有 @EnableAsync，无 Executor Bean。",
+      fixes: [
+        { t: "拆 llm / mail 两个池", d: "LLM 快速失败（拒绝即返回“忙”），邮件允许排队重试。", cost: "mid", costTx: "中" },
+        { t: "@Async 指定池名", d: "@Async(\"mailExecutor\") 显式绑定，避免落到默认池。", cost: "low", costTx: "低" }
+      ],
+      verify: "模型超时压测期间，邮件发送成功率不受影响。"
+    },
+    B1: {
+      level: "warn", title: "连接池用默认 10，没算过",
+      symptom: "spring.datasource.hikari 未配置，maximumPoolSize 取默认 10。",
+      impact: "读多写少时可能够，但没有依据。所需连接数 ≈ QPS × 平均查询耗时。",
+      evidence: "application.yml 无 hikari 段；默认池 10、connectionTimeout 30s。",
+      fixes: [
+        { t: "先测再调", d: "压测取 QPS 与 P95 耗时，按 QPS×耗时 算所需连接数。", cost: "mid", costTx: "中" },
+        { t: "兜底参考值", d: "8 核 + SSD 约 17；读多写少先上 12–16，再按数据调。", cost: "low", costTx: "低" }
+      ],
+      verify: "压测期间无 Connection is not available；P95 查询耗时稳定。"
+    },
+    C2: {
+      level: "bad", title: "缓存全量失效，不是精确失效",
+      symptom: "写操作统一 @CacheEvict(allEntries = true)，清空整个 postList / postCount。",
+      impact: "写一次清一片：并发下大量请求同时回源 MySQL，热点 key 瞬间击穿。",
+      evidence: "PostService.java:33,135,158；FollowService.java:39,54。",
+      fixes: [
+        { t: "按 key 精确失效", d: "@CacheEvict(key = ...) 只清受影响的分页 / 标签组合。", cost: "mid", costTx: "中" },
+        { t: "加 single-flight", d: "回源前抢 Redis 短锁，只放一个请求查库，其余等结果。", cost: "mid", costTx: "中" }
+      ],
+      verify: "写入后 miss 只落在受影响 key；并发回源时 MySQL QPS 无尖峰。"
+    },
+    D0: {
+      level: "bad", title: "多表写入没有事务",
+      symptom: "90 个 Java 文件里只有 1 处 @Transactional（TagServiceImpl:29）。",
+      impact: "发文 = 插 post + 插标签关联，中途失败会留半条数据；单表写不受影响，所以平时看不出来。",
+      evidence: "grep -rn \"@Transactional\" 仅 1 处；PostService 的 create / update 无注解。",
+      fixes: [
+        { t: "多表写方法加 @Transactional", d: "优先 create / update / delete 这类跨两张以上表的操作。", cost: "low", costTx: "低" },
+        { t: "注意自调用失效", d: "同类内部 this.xxx() 不走代理；必要时拆到另一个 Bean。", cost: "low", costTx: "低" }
+      ],
+      verify: "人为在第二条 insert 后抛异常，回滚后数据库无残留记录。"
+    },
+    E2: {
+      level: "bad", title: "分页参数没有上限",
+      symptom: "CommentController 的 limit 默认 20，但没有最大值约束。",
+      impact: "传 limit=1000000 会一次拉全表，堆内存与网络同时被打满，比慢更突然。",
+      evidence: "CommentController.java:35 @RequestParam(defaultValue=\"20\") int limit。",
+      fixes: [{ t: "加上限并截断", d: "limit = Math.min(limit, 100)，越界返回上限值而不是报错。", cost: "low", costTx: "低" }],
+      verify: "传 limit=999999 时返回条数不超过上限，响应时间与 limit=100 相当。"
+    },
+    F2: {
+      level: "warn", title: "Agent 的写操作还没有边界",
+      symptom: "Tool Registry 尚未落地；稻草人当前只有对话能力。",
+      impact: "一旦接上写工具（改标签、存草稿），提示注入就能借 Agent 之手改数据。",
+      evidence: "无 Tool 实现；现有防线为注入检测 + canary + 额度闸门。",
+      fixes: [{ t: "读写分级", d: "只读直连；写工具只生成“待确认操作”，由前端确认后落库。", cost: "mid", costTx: "中" }],
+      verify: "构造注入话术要求删除文章，Agent 只返回待确认动作，数据库无变化。"
+    }
+  },
+
+  modes: {
+    simple: {
+      kicker: "READER VIEW", title: "从一次点击开始", sub: "Acme Blog",
+      nodes: [
+        { id:"you", issues:[], x:335, y:52, w:220, h:58, t:"你", s:"点开一篇文章", k:"start",
+          role:"一次读者请求的起点。请求带着路径进来，由路径决定它走静态还是走接口。" },
+        { id:"ngx", issues:[], x:335, y:158, w:220, h:58, t:"Nginx", s:"静态文件直接给", k:"edge",
+          role:"站点第一道门。静态资源由它直接返回，<b>不进 Tomcat</b>，不消耗应用线程。" },
+        { id:"app", issues:["A1", "A4", "D0"], x:335, y:264, w:220, h:58, t:"Spring Boot", s:"先问缓存，再问库", k:"app",
+          role:"业务核心。列表接口在这里组装：先查缓存，未命中才回源，然后拼成前端要的结构。" },
+        { id:"redis", issues:["C2"], x:205, y:390, w:180, h:58, t:"Redis", s:"命中 · 12ms", k:"data",
+          role:"缓存层。命中就 12ms 返回，不碰数据库；它的价值全在命中率与失效策略上。" },
+        { id:"mysql", issues:["B1"], x:485, y:390, w:180, h:58, t:"MySQL", s:"未命中 · 87ms", k:"data",
+          role:"真相来源。只有缓存未命中才会被访问；一次典型查询 87ms，是慢的那条路。" },
+        { id:"page", issues:[], x:335, y:496, w:220, h:58, t:"页面出现", s:"12ms 或 87ms", k:"start",
+          role:"用户感知到的那一下。12ms 和 87ms 的差别，用户是能感觉到的。" },
+        { id:"you2", issues:[], x:795, y:52, w:200, h:58, t:"你问稻草人", s:"敲一句话", k:"start",
+          role:"另一条路径：不是读内容，而是和一个有性格的 NPC 对话。" },
+        { id:"spai", issues:["A2"], x:795, y:158, w:200, h:58, t:"Spring AI", s:"转成请求发给百炼", k:"ai",
+          role:"把中文对话转成模型请求，同时挂上提示词、记忆与防线。" },
+        { id:"ds", issues:["A1"], x:795, y:264, w:200, h:58, t:"DeepSeek", s:"3–8 秒开始吐字", k:"ai",
+          role:"外部推理服务。<b>慢是它的本性，不是它的问题</b>——问题在我们怎么调它。" },
+        { id:"stream", issues:["A2"], x:795, y:390, w:200, h:58, t:"逐字回到屏幕", s:"流式 · 不占线程", k:"start",
+          role:"流式返回。用户 3 秒内看到第一个字，而不是等 8 秒看一整段。" }
+      ],
+      edges: [
+        { a:"you", b:"ngx", ms:2 }, { a:"ngx", b:"app", ms:3 },
+        { a:"app", b:"redis", ms:12 }, { a:"app", b:"mysql", ms:87 },
+        { a:"redis", b:"page", ms:2 }, { a:"mysql", b:"page", ms:5 },
+        { a:"you2", b:"spai", ms:3 }, { a:"spai", b:"ds", ms:650 },
+        { a:"ds", b:"stream", ms:3200 }
+      ],
+      steps: [
+        { n:"01", nodes:["you"], edges:[], txt:"你点开一篇文章。浏览器发出一个请求，接下来看它经过谁。" },
+        { n:"02", nodes:["ngx"], edges:["you>ngx"], txt:"请求先到 Nginx。静态资源在这里就被返回，不进后端——这一步通常 2ms。" },
+        { n:"03", nodes:["app"], edges:["ngx>app"], txt:"只有接口请求才转发给 Spring Boot。它接手后第一件事是问缓存。" },
+        { n:"04", nodes:["redis"], edges:["app>redis"], txt:"Redis 命中：12ms 返回。绝大多数请求走到这里就结束了。" },
+        { n:"05", nodes:["mysql","page"], edges:["app>mysql","mysql>page"], txt:"未命中才查 MySQL：87ms，是命中路径的七倍。查完回写缓存，下次走快路。" },
+        { n:"06", nodes:["you2","spai","ds","stream"], edges:["you2>spai","spai>ds","ds>stream"], txt:"另一条路：问稻草人。模型 3–8 秒才吐第一个字，所以这里必须流式，否则线程被钉住。" }
+      ]
+    },
+
+    pro: {
+      kicker: "RUNTIME VIEW", title: "五层运行时", sub: "Spring Boot 单体",
+      layers: [
+        { id:"L1", y:14, h:96, label:"L1  CLIENT" },
+        { id:"L2", y:124, h:96, label:"L2  EDGE", hot:true },
+        { id:"L3", y:234, h:120, label:"L3  APPLICATION" },
+        { id:"L4", y:368, h:110, label:"L4  AGENT", hot:true },
+        { id:"L5", y:492, h:110, label:"L5  DATA" }
+      ],
+      nodes: [
+        { id:"spa", issues:[], layer:"L1", w:260, t:"浏览器 SPA", s:"Vue 3 · 自写 hash 路由", k:"start",
+          role:"单页应用。路由自己写、没有 Vue Router，页面切换靠 hash，刷新不丢位置。" },
+        { id:"theme", issues:[], layer:"L1", w:240, t:"主题装配器", s:"token JSON → CSS 变量", k:"start",
+          role:"用户 DIY 的落点。存的是 token 配置而不是 CSS——避免样式注入把数据带出去。" },
+        { id:"ngx1", issues:[], layer:"L2", w:250, t:"Nginx · 静态", s:"gzip · 强缓存", k:"edge",
+          role:"静态资源与压缩。文件名带 hash 才能开长缓存，否则改一次要让全站用户清缓存。" },
+        { id:"ngx2", issues:[], layer:"L2", w:250, t:"SSE 反代", s:"proxy_buffering off", k:"edge",
+          role:"流式接口的反代。必须关 buffering，否则 Nginx 攒满缓冲才吐，流式变一次性。" },
+        { id:"ctr", issues:[], layer:"L3", w:200, t:"Controller", s:"JWT 拦截 · 全局异常", k:"app",
+          role:"接入层。负责鉴权、参数校验、异常转统一结构，不写业务。" },
+        { id:"svc", issues:["D0"], layer:"L3", w:200, t:"Service", s:"auth · content · social", k:"app",
+          role:"业务层。事务边界、缓存读写、跨表写入都在这一层。" },
+        { id:"pool", issues:["B1"], layer:"L3", w:190, t:"Hikari 10 · Lettuce 16", s:"连接池，默认未调", k:"app",
+          role:"数据库与缓存的连接池。线程不再是瓶颈之后，这里就是新瓶颈。" },
+        { id:"exec", issues:["A4"], layer:"L3", w:190, t:"异步执行器", s:"未分池 · 邮件与 LLM 同池", k:"app",
+          role:"异步任务的执行边界。失败模式不同的任务放一个池，会互相牵连。" },
+        { id:"sai", issues:["A2"], layer:"L4", w:190, t:"Spring AI", s:"百炼 · Flux 流式", k:"ai",
+          role:"模型接入层。流式返回是关键：它决定等 8 秒的是用户还是线程。" },
+        { id:"mem", issues:[], layer:"L4", w:180, t:"记忆分层", s:"Redis 短期 / MySQL 长期", k:"ai",
+          role:"稻草人记得你的机制：短期会话在 Redis，长期偏好落库。" },
+        { id:"tool", issues:["F2"], layer:"L4", w:180, t:"Tool Registry", s:"只读直连 · 写需确认", k:"ai",
+          role:"工具调用的边界。只读可直连，写操作必须人来确认。" },
+        { id:"guard", issues:[], layer:"L4", w:170, t:"防线", s:"注入检测 · canary · 额度", k:"ai",
+          role:"提示注入的三道闸：检测话术、输出兜底、额度限制。" },
+        { id:"my", issues:[], layer:"L5", w:190, t:"MySQL 主从", s:"一主两从 · ngram", k:"data",
+          role:"主库承接写、从库分担读；全文检索靠 ngram 索引，不引入 ES。" },
+        { id:"rd", issues:["C2"], layer:"L5", w:190, t:"Redis", s:"allEntries 全量失效", k:"data",
+          role:"缓存 + 会话 + 限流计数。失效策略决定它是在挡流量还是放大流量。" },
+        { id:"minio", issues:[], layer:"L5", w:170, t:"MinIO", s:"对象存储 · 待施工", k:"data",
+          role:"图片存这里，不塞数据库。ADR-0003 已定，代码未落地。" },
+        { id:"pc", issues:[], layer:"L5", w:170, t:"Pinecone", s:"向量 / RAG · 待施工", k:"data",
+          role:"语义检索与相关推荐。ADR-0002 已定，属 M4 范围。" }
+      ],
+      edges: [
+        { a:"spa", b:"ngx1", ms:2 }, { a:"spa", b:"ngx2", ms:2 },
+        { a:"ngx1", b:"ctr", ms:4 }, { a:"ngx2", b:"ctr", ms:4 },
+        { a:"ctr", b:"svc", ms:1 }, { a:"svc", b:"pool", ms:1 },
+        { a:"svc", b:"sai", ms:2 },
+        { a:"sai", b:"mem", ms:3 },
+        { a:"pool", b:"my", ms:87 }, { a:"pool", b:"rd", ms:12 },
+        { a:"svc", b:"minio", ms:40 }, { a:"sai", b:"pc", ms:120 }
+      ],
+      steps: []
+    }
+  }
+};
+
+
+/* ═══ 渲染 ═══ */
+const $ = (s) => document.querySelector(s);
+const canvas = $("#canvas"), wrap = $("#canvasWrap"), sizer = $("#sizer");
+const elLayers = $("#layers"), elNodes = $("#nodes"), elSvg = $("#edges"), elSparks = $("#sparks");
+const panel = $("#panel"), panelIn = $("#panelIn");
+const narr = $("#narr"), narrNo = $("#narrNo"), narrTxt = $("#narrTxt");
+
+let mode = "simple", step = -1, playing = false, autoTimer = null;
+
+function layoutLayers(m) {
+  if (!m.layers) return;
+  m.layers.forEach(L => {
+    const ns = m.nodes.filter(n => n.layer === L.id);
+    const gap = 18;
+    const total = ns.reduce((s, n) => s + n.w, 0) + gap * (ns.length - 1);
+    let x = (CANVAS_W - total) / 2;
+    ns.forEach(n => { n.x = x; n.y = L.y + 30; n.h = 54; x += n.w + gap; });
+  });
+}
+
+function levelOf(n) {
+  const ids = n.issues || [];
+  const lv = ids.map(i => DATA.issues[i] && DATA.issues[i].level);
+  if (lv.includes("bad")) return "bad";
+  if (lv.includes("warn")) return "warn";
+  return ids.length ? "ok" : "";
+}
+
+function kindClass(n) {
+  const base = { start:"t-start", edge:"t-edge", ai:"t-ai", data:"t-data", app:"t-app" }[n.k] || "t-app";
+  const lv = levelOf(n);
+  return base + (lv === "bad" ? " bad" : lv === "warn" ? " warn" : "");
+}
+
+function primaryOf(n) {
+  const ids = n.issues || [];
+  return ids.find(i => DATA.issues[i] && DATA.issues[i].level === "bad")
+      || ids.find(i => DATA.issues[i] && DATA.issues[i].level === "warn")
+      || ids[0] || null;
+}
+
+function pathOf(A, B) {
+  const ah = A.h || 54, bh = B.h || 54;
+  // 同一层：走水平线，避免垂直弧线横穿邻节点
+  if (Math.abs(A.y - B.y) < 4) {
+    const ax = A.x + A.w, ay = A.y + ah / 2;
+    const bx = B.x, by = B.y + bh / 2;
+    const mx = (ax + bx) / 2;
+    return `M ${ax} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${bx} ${by}`;
+  }
+  const ax = A.x + A.w / 2, ay = A.y + ah;
+  const bx = B.x + B.w / 2, by = B.y;
+  if (Math.abs(ax - bx) < 2) return `M ${ax} ${ay} L ${bx} ${by}`;
+  const mid = ay + (by - ay) * 0.5;
+  return `M ${ax} ${ay} C ${ax} ${mid}, ${bx} ${mid}, ${bx} ${by}`;
+}
+
+/* 延迟 → 光点时长：2ms≈1.4s，87ms≈3.6s，3200ms≈5.8s */
+function durOf(ms) {
+  const d = 1.0 + Math.log10(Math.max(ms, 1)) * 1.32;
+  return Math.min(d, 6.4).toFixed(2);
+}
+
+function render() {
+  const m = DATA.modes[mode];
+  layoutLayers(m);
+  elLayers.innerHTML = elNodes.innerHTML = elSvg.innerHTML = elSparks.innerHTML = "";
+  closePanel();
+
+  (m.layers || []).forEach(L => {
+    const d = document.createElement("div");
+    d.className = "layer" + (L.hot ? " hot" : "");
+    d.style.cssText = `top:${L.y}px;height:${L.h}px`;
+    d.innerHTML = `<span class="lb">${L.label}</span>`;
+    elLayers.appendChild(d);
+  });
+
+  m.nodes.forEach(n => {
+    const el = document.createElement("div");
+    el.className = "node " + kindClass(n);
+    el.style.cssText = `left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h || 54}px`;
+    el.dataset.id = n.id;
+    el.title = n.t + " — " + n.s;
+    el.innerHTML = `<div class="nt">${n.t}</div><div class="ns">${n.s}</div>`;
+    const pid = primaryOf(n), lv = levelOf(n);
+    if (pid && (lv === "bad" || lv === "warn")) {
+      const f = document.createElement("i");
+      f.className = "flag " + lv;
+      f.textContent = pid;
+      el.appendChild(f);
+    } else if (lv === "ok") {
+      const dot = document.createElement("i");
+      dot.className = "dot";
+      el.appendChild(dot);
+    }
+    el.addEventListener("click", () => {
+      if (suppressClick) { suppressClick = false; return; }
+      stopPlay(); showNode(n.id);
+    });
+    elNodes.appendChild(el);
+  });
+
+  const byId = {};
+  m.nodes.forEach(n => byId[n.id] = n);
+
+  m.edges.forEach((e, i) => {
+    const A = byId[e.a], B = byId[e.b];
+    if (!A || !B) return;
+    const d = pathOf(A, B), key = e.a + ">" + e.b;
+
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d);
+    p.setAttribute("class", "edge" + (levelOf(byId[e.b]) === "bad" ? " bad" : ""));
+    p.dataset.key = key;
+    elSvg.appendChild(p);
+
+    const s = document.createElement("div");
+    s.className = "spark" + (B.k === "ai" ? " sky" : "");
+    s.style.offsetPath = `path("${d}")`;
+    s.style.animationDuration = durOf(e.ms) + "s";
+    s.style.animationDelay = ((i * 0.37) % 3).toFixed(2) + "s";
+    s.dataset.key = key;
+    elSparks.appendChild(s);
+  });
+
+  updatePlayUI();
+}
+
+/* ═══ 面板 ═══ */
+function showNode(id) {
+  const n = DATA.modes[mode].nodes.find(x => x.id === id);
+  if (!n) return;
+  const ids = n.issues || [];
+  const list = ids.map(k => Object.assign({ k: k }, DATA.issues[k])).filter(x => x.title);
+  const kindTx = { start:"起点 / 结果", edge:"边缘", app:"应用", ai:"智能", data:"数据" }[n.k] || "组件";
+  const worst = list.find(x => x.level === "bad") || list.find(x => x.level === "warn");
+
+  const html = list.length ? list.map(it => `
+    <div class="issue">
+      <div class="i-head">
+        <span class="i-id ${it.level}">${it.k}</span>
+        <span class="i-title">${it.title}</span>
+      </div>
+      <div class="i-body">
+        <div class="f"><span class="f-k">现象</span><span class="f-v">${it.symptom}</span></div>
+        <div class="f"><span class="f-k">影响</span><span class="f-v">${it.impact}</span></div>
+        <div class="f"><span class="f-k">证据</span><span class="f-v"><code>${it.evidence}</code></span></div>
+        <div class="f"><span class="f-k">整改</span><span class="f-v">${it.fixes.map(f =>
+          `<div class="fix"><div class="fix-t">${f.t}<span class="cost ${f.cost}">${f.costTx}</span></div><div class="fix-d">${f.d}</div></div>`).join("")}</span></div>
+        <div class="verify"><b>验收判据</b>${it.verify}</div>
+      </div>
+    </div>`).join("")
+    : `<p class="p-role" style="color:var(--ink-3)">这个节点在本次检查表里没有对应项。</p>`;
+
+  panelIn.innerHTML =
+    `<div class="p-head">
+      <div style="min-width:0">
+        <div class="p-kind">${kindTx}${worst ? " · 待处理" : ""}</div>
+        <div class="p-title">${n.t}</div>
+        <div class="p-sub">${n.s}</div>
+      </div>
+      <button class="p-close" id="pClose">×</button>
+    </div>
+    <div class="p-body">
+      <div class="p-role">${n.role || ""}</div>
+      ${html}
+    </div>`;
+  panel.classList.add("open");
+  applyPanelWidth(panelW);
+  panelIn.scrollTop = 0;
+  $("#pClose").addEventListener("click", closePanel);
+  requestAnimationFrame(fit);
+}
+
+let panelW = 430;                    // 记住上次宽度（默认 430 ≈ 1.13× 字号）
+const PANEL_BASE = 380, PANEL_MIN = 320, PANEL_MAX = 800;
+
+function applyPanelWidth(w) {
+  panelW = Math.min(PANEL_MAX, Math.max(PANEL_MIN, w));
+  panel.style.width = panelW + "px";
+  panelIn.style.zoom = (panelW / PANEL_BASE).toFixed(3);   // 拉宽即放大内文
+}
+
+function closePanel() {
+  if (!panel.classList.contains("open")) return;
+  panel.classList.remove("open");
+  panel.style.width = "";
+  requestAnimationFrame(fit);
+}
+
+/* 面板左缘拖拽：往左拉变宽、字变大；往右收到最窄 */
+(function initResizer() {
+  const rz = $("#pResizer");
+  let d = null;
+  rz.addEventListener("mousedown", e => {
+    e.preventDefault(); e.stopPropagation();
+    d = { x: e.clientX, w: panelW };
+    panel.classList.add("resizing");
+    document.body.style.cursor = "col-resize";
+  });
+  window.addEventListener("mousemove", e => {
+    if (!d) return;
+    applyPanelWidth(d.w - (e.clientX - d.x));
+  });
+  window.addEventListener("mouseup", () => {
+    if (!d) return;
+    d = null;
+    panel.classList.remove("resizing");
+    document.body.style.cursor = "";
+    requestAnimationFrame(fit);
+  });
+  rz.addEventListener("dblclick", () => { applyPanelWidth(PANEL_BASE); requestAnimationFrame(fit); });
+})();
+
+/* ═══ 播放 ═══ */
+function steps() { return DATA.modes[mode].steps || []; }
+
+function updatePlayUI() {
+  const S = steps(), has = S.length > 0;
+  $("#btnPlay").disabled = !has;
+  $("#btnPrev").disabled = !has || step <= 0;
+  $("#btnNext").disabled = !has || step >= S.length - 1;
+  $("#pbCount").textContent = has ? String(Math.max(step + 1, 0)).padStart(2, "0") + " / " + String(S.length).padStart(2, "0") : "— / —";
+  $("#pbFill").style.width = has && step >= 0 ? ((step + 1) / S.length * 100) + "%" : "0%";
+
+  if (!has) {
+    narr.classList.remove("on");
+    narrNo.textContent = "STATIC";
+    narrTxt.textContent = "这个视图只有结构：点任意节点，看它的职责与检查结论。";
+  } else if (step < 0 && !playing) {
+    narr.classList.remove("on");
+    narrNo.textContent = "PREVIEW";
+    narrTxt.textContent = "点节点看它做什么、哪里有问题；点「播放讲解」跟着走一遍。";
+  }
+}
+
+function applyStep() {
+  const st = steps()[step];
+  if (!st) return;
+  const lit = new Set(st.nodes), litE = new Set(st.edges || []);
+  document.querySelectorAll("#nodes .node").forEach(el => {
+    const on = lit.has(el.dataset.id);
+    el.classList.toggle("dim", !on);
+    el.classList.toggle("lit", on);
+  });
+  document.querySelectorAll("#edges .edge").forEach(el => {
+    const on = litE.has(el.dataset.key);
+    el.classList.toggle("dim", !on);
+    el.classList.toggle("lit", on);
+  });
+  document.querySelectorAll("#sparks .spark").forEach(el => {
+    el.classList.toggle("dim", !litE.has(el.dataset.key));
+  });
+  narr.classList.add("on");
+  narrNo.textContent = st.n;
+  narrTxt.textContent = st.txt;
+}
+
+function clearStep() {
+  document.querySelectorAll(".node,.edge,.spark").forEach(el => el.classList.remove("dim", "lit"));
+  narr.classList.remove("on");
+}
+
+function stepTo(i) {
+  const S = steps();
+  if (!S.length) return;
+  step = i < 0 ? -1 : Math.min(i, S.length - 1);
+  if (step < 0) { clearStep(); updatePlayUI(); return; }
+  applyStep();
+  updatePlayUI();
+}
+
+function play() {
+  const S = steps();
+  if (!S.length) return;
+  playing = true;
+  $("#btnExit").hidden = false;
+  $("#btnPlay").innerHTML = '<span class="pb-sq"></span>暂停';
+  stepTo(step + 1);
+  clearInterval(autoTimer);
+  autoTimer = setInterval(() => {
+    if (step >= S.length - 1) { pause(); return; }
+    stepTo(step + 1);
+  }, 3000);
+}
+
+function pause() {
+  playing = false;
+  clearInterval(autoTimer);
+  $("#btnPlay").innerHTML = '<span class="pb-tri"></span>继续';
+}
+
+function stopPlay() {
+  playing = false;
+  clearInterval(autoTimer);
+  step = -1;
+  clearStep();
+  $("#btnExit").hidden = true;
+  $("#btnPlay").innerHTML = '<span class="pb-tri"></span>播放讲解';
+  updatePlayUI();
+}
+
+$("#btnPlay").addEventListener("click", () => {
+  if (playing) { pause(); return; }
+  if (step >= steps().length - 1) { step = -1; }
+  play();
+});
+$("#btnExit").addEventListener("click", () => stopPlay());
+$("#btnPrev").addEventListener("click", () => { pause(); stepTo(step - 1); });
+$("#btnNext").addEventListener("click", () => { pause(); stepTo(step + 1); });
+
+/* ═══ 视图切换 / 缩放 ═══ */
+function show(mm) {
+  stopPlay();
+  mode = mm;
+  const m = DATA.modes[mm];
+  $("#mKicker").textContent = m.kicker;
+  $("#mTitle").innerHTML = m.title + " <small>" + m.sub + "</small>";
+  document.querySelectorAll(".seg button").forEach(b => b.classList.toggle("on", b.dataset.mode === mm));
+  render();
+  requestAnimationFrame(fit);
+}
+
+/* 视口：滚轮缩放（以指针为锚点）+ 拖动平移 */
+const view = { x: 0, y: 0, s: 1 };
+const MIN_S = 0.32, MAX_S = 2.4;
+
+function applyView() {
+  sizer.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.s + ")";
+}
+
+function fit() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  const s = Math.max(Math.min((w - 48) / CANVAS_W, (h - 20) / CANVAS_H, 1), 0.3);
+  view.s = s;
+  view.x = (w - CANVAS_W * s) / 2;
+  view.y = (h - CANVAS_H * s) / 2;
+  applyView();
+}
+
+wrap.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = wrap.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const factor = Math.exp(-e.deltaY * 0.0016);
+  const ns = Math.min(MAX_S, Math.max(MIN_S, view.s * factor));
+  if (Math.abs(ns - view.s) < 1e-4) return;
+  view.x = mx - (mx - view.x) * (ns / view.s);
+  view.y = my - (my - view.y) * (ns / view.s);
+  view.s = ns;
+  applyView();
+}, { passive: false });
+
+let drag = null, suppressClick = false;
+wrap.addEventListener("mousedown", e => {
+  if (e.button !== 0) return;
+  drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
+  wrap.classList.add("grabbing");
+});
+window.addEventListener("mousemove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+  if (drag.moved) { view.x = drag.vx + dx; view.y = drag.vy + dy; applyView(); }
+});
+window.addEventListener("mouseup", () => {
+  if (drag && drag.moved) suppressClick = true;
+  drag = null;
+  wrap.classList.remove("grabbing");
+});
+
+$("#btnFit").addEventListener("click", fit);
+
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => show(b.dataset.mode)));
+window.addEventListener("resize", fit);
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    if (panel.classList.contains("open")) closePanel(); else stopPlay();
+    return;
+  }
+  if (e.code === "Space") { e.preventDefault(); $("#btnPlay").click(); return; }
+  if (e.key === "ArrowRight" && !$("#btnNext").disabled) { pause(); stepTo(step + 1); }
+  if (e.key === "ArrowLeft" && !$("#btnPrev").disabled) { pause(); stepTo(step - 1); }
+});
+
+/* AI 可直接读：window.__ARCH_DATA__ */
+window.__ARCH_DATA__ = DATA;
+
+const Q = new URLSearchParams(location.search);
+const qv = Q.get("view") === "pro" ? "pro" : "simple";
+show(qv);
+if (Q.get("step") && steps().length) {
+  const t = parseInt(Q.get("step"), 10);
+  if (!isNaN(t)) setTimeout(() => { pause(); stepTo(t - 1); }, 500);
+}
+if (Q.get("pw")) {
+  const t = parseInt(Q.get("pw"), 10);
+  if (!isNaN(t)) panelW = Math.min(PANEL_MAX, Math.max(PANEL_MIN, t));
+}
+if (Q.get("node")) {
+  setTimeout(() => showNode(Q.get("node")), 500);
+}
+</script>
+</body>
+</html>
