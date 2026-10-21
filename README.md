@@ -1,4 +1,4 @@
-# Java 后端架构检查表
+# Java 架构检查skill
 
 > 给 Spring Boot 项目做架构体检：20 项判据逐条过，输出一份会动的 HTML 报告。
 
